@@ -220,30 +220,47 @@ async function sendBulkEmails(chatId, emails, subject, body, attachments = []) {
 }
 
 // ─── Attachment menu (inline keyboard) ──────────────────────────
-function sendAttachmentMenu(chatId, attachments) {
+function sendAttachmentMenu(chatId, attachments, justAdded = null) {
   const count = attachments.length;
-  const header = count > 0
-    ? `📎 *Вложения (${count}):*\n${attachments.map((a, i) => `  ${i + 1}. ${a.filename}`).join("\n")}\n\n`
-    : "";
 
-  bot.sendMessage(
-    chatId,
-    `${header}📎 *Хотите прикрепить вложения к письму?*\n\nВыберите, что вы хотите добавить:`,
-    {
-      parse_mode: "Markdown",
-      reply_markup: {
-        inline_keyboard: [
-          [
-            { text: "🖼 Фото", callback_data: "attach_photo" },
-            { text: "📄 Файл/Документ", callback_data: "attach_file" },
-          ],
-          [
-            { text: count > 0 ? `✅ Готово (${count} вложений)` : "⏩ Без вложений", callback_data: "attach_done" },
-          ],
+  let message = "";
+
+  // Success banner if something was just added
+  if (justAdded) {
+    message += `✅ *${justAdded}* — добавлено!\n\n`;
+  }
+
+  if (count > 0) {
+    message += `━━━━━━━━━━━━━━━━━━━━━━\n`;
+    message += `📎 *Прикреплённые файлы (${count}):*\n`;
+    message += attachments.map((a, i) => `   ${i + 1}. ${a.filename}`).join("\n");
+    message += `\n━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+    message += `➕ Добавить ещё вложение или отправить?`;
+  } else {
+    message += `📎 *Хотите прикрепить вложения к письму?*\n\n`;
+    message += `🖼 Фото — отобразится в теле письма\n`;
+    message += `📄 Файл — PDF, Word, Excel, архивы и др.\n\n`;
+    message += `Выберите действие:`;
+  }
+
+  const doneText = count > 0
+    ? `✅ Готово — отправить (${count} влож.)` 
+    : "⏩ Пропустить — без вложений";
+
+  bot.sendMessage(chatId, message, {
+    parse_mode: "Markdown",
+    reply_markup: {
+      inline_keyboard: [
+        [
+          { text: "🖼 Добавить фото", callback_data: "attach_photo" },
+          { text: "📄 Добавить файл", callback_data: "attach_file" },
         ],
-      },
-    }
-  );
+        [
+          { text: doneText, callback_data: "attach_done" },
+        ],
+      ],
+    },
+  });
 }
 
 // ─── Confirmation summary ───────────────────────────────────────
@@ -383,9 +400,8 @@ bot.on("message", async (msg) => {
           contentType: `image/${ext.replace(".", "") === "jpg" ? "jpeg" : ext.replace(".", "")}`,
         });
 
-        bot.sendMessage(chatId, `✅ Фото добавлено: *${filename}*`, { parse_mode: "Markdown" });
         session._waitingFor = null;
-        sendAttachmentMenu(chatId, session.attachments);
+        sendAttachmentMenu(chatId, session.attachments, filename);
       } catch (err) {
         console.error("Ошибка загрузки фото:", err.message);
         bot.sendMessage(chatId, "⚠️ Не удалось загрузить фото. Попробуйте ещё раз.");
@@ -407,9 +423,8 @@ bot.on("message", async (msg) => {
           contentType: doc.mime_type || "application/octet-stream",
         });
 
-        bot.sendMessage(chatId, `✅ Файл добавлен: *${filename}*`, { parse_mode: "Markdown" });
         session._waitingFor = null;
-        sendAttachmentMenu(chatId, session.attachments);
+        sendAttachmentMenu(chatId, session.attachments, filename);
       } catch (err) {
         console.error("Ошибка загрузки файла:", err.message);
         bot.sendMessage(chatId, "⚠️ Не удалось загрузить файл. Попробуйте ещё раз.");
