@@ -219,13 +219,11 @@ async function sendBulkEmails(chatId, emails, subject, body, attachments = []) {
   return { success, fail, errors };
 }
 
-// ─── Attachment menu (inline keyboard) ──────────────────────────
-function sendAttachmentMenu(chatId, attachments, justAdded = null) {
+// ─── Attachment prompt ──────────────────────────────────────────
+function sendAttachmentPrompt(chatId, attachments, justAdded = null) {
   const count = attachments.length;
-
   let message = "";
 
-  // Success banner if something was just added
   if (justAdded) {
     message += `✅ *${justAdded}* — добавлено!\n\n`;
   }
@@ -235,29 +233,25 @@ function sendAttachmentMenu(chatId, attachments, justAdded = null) {
     message += `📎 *Прикреплённые файлы (${count}):*\n`;
     message += attachments.map((a, i) => `   ${i + 1}. ${a.filename}`).join("\n");
     message += `\n━━━━━━━━━━━━━━━━━━━━━━\n\n`;
-    message += `➕ Добавить ещё вложение или отправить?`;
+    message += `📩 *Готовы отправить или хотите добавить ещё?*\n`;
+    message += `Отправьте ещё фото/файл или нажмите кнопку внизу.`;
   } else {
     message += `📎 *Хотите прикрепить вложения к письму?*\n\n`;
-    message += `🖼 Фото — отобразится в теле письма\n`;
-    message += `📄 Файл — PDF, Word, Excel, архивы и др.\n\n`;
-    message += `Выберите действие:`;
+    message += `Просто отправьте мне фото или файл прямо сейчас.\n`;
+    message += `Или нажмите кнопку, чтобы пропустить.`;
   }
-
-  const doneText = count > 0
-    ? `✅ Готово — отправить (${count} влож.)` 
-    : "⏩ Пропустить — без вложений";
 
   bot.sendMessage(chatId, message, {
     parse_mode: "Markdown",
     reply_markup: {
       inline_keyboard: [
-        [
-          { text: "🖼 Добавить фото", callback_data: "attach_photo" },
-          { text: "📄 Добавить файл", callback_data: "attach_file" },
-        ],
-        [
-          { text: doneText, callback_data: "attach_done" },
-        ],
+        count > 0
+          ? [
+              { text: `✅ Готово — отправить (${count} влож.)`, callback_data: "attach_done" },
+            ]
+          : [
+              { text: "⏩ Пропустить — без вложений", callback_data: "attach_done" },
+            ],
       ],
     },
   });
@@ -345,29 +339,12 @@ bot.on("callback_query", async (query) => {
   const session = getSession(chatId);
   const data = query.data;
 
-  // Only handle attachment callbacks when in the right state
-  if (session.state !== STATES.WAITING_ATTACHMENTS) {
+  if (data === "attach_done" && session.state === STATES.WAITING_ATTACHMENTS) {
     await bot.answerCallbackQuery(query.id);
-    return;
-  }
-
-  if (data === "attach_photo") {
-    await bot.answerCallbackQuery(query.id);
-    session._waitingFor = "photo";
-    bot.sendMessage(chatId, "🖼 Отправьте мне *фото*, которое хотите прикрепить к письму.\n\n💡 Отправляйте как фото (не файлом), чтобы оно отобразилось в письме.", {
-      parse_mode: "Markdown",
-    });
-  } else if (data === "attach_file") {
-    await bot.answerCallbackQuery(query.id);
-    session._waitingFor = "file";
-    bot.sendMessage(chatId, "📄 Отправьте мне *файл* (документ), который хотите прикрепить к письму.\n\n💡 Можно отправить PDF, Word, Excel, архив или любой другой файл.", {
-      parse_mode: "Markdown",
-    });
-  } else if (data === "attach_done") {
-    await bot.answerCallbackQuery(query.id);
-    session._waitingFor = null;
     session.state = STATES.WAITING_CONFIRM;
     sendConfirmation(chatId, session);
+  } else {
+    await bot.answerCallbackQuery(query.id);
   }
 });
 
@@ -400,8 +377,7 @@ bot.on("message", async (msg) => {
           contentType: `image/${ext.replace(".", "") === "jpg" ? "jpeg" : ext.replace(".", "")}`,
         });
 
-        session._waitingFor = null;
-        sendAttachmentMenu(chatId, session.attachments, filename);
+        sendAttachmentPrompt(chatId, session.attachments, filename);
       } catch (err) {
         console.error("Ошибка загрузки фото:", err.message);
         bot.sendMessage(chatId, "⚠️ Не удалось загрузить фото. Попробуйте ещё раз.");
@@ -423,8 +399,7 @@ bot.on("message", async (msg) => {
           contentType: doc.mime_type || "application/octet-stream",
         });
 
-        session._waitingFor = null;
-        sendAttachmentMenu(chatId, session.attachments, filename);
+        sendAttachmentPrompt(chatId, session.attachments, filename);
       } catch (err) {
         console.error("Ошибка загрузки файла:", err.message);
         bot.sendMessage(chatId, "⚠️ Не удалось загрузить файл. Попробуйте ещё раз.");
@@ -434,10 +409,8 @@ bot.on("message", async (msg) => {
 
     // If they send text while waiting for attachments, ignore unless it's something else
     if (msg.text) {
-      bot.sendMessage(chatId, "⚠️ Пожалуйста, отправьте фото или файл, либо нажмите кнопку ниже.", {
-        parse_mode: "Markdown",
-      });
-      sendAttachmentMenu(chatId, session.attachments);
+      bot.sendMessage(chatId, "⚠️ Отправьте фото или файл, либо нажмите кнопку ниже.");
+      sendAttachmentPrompt(chatId, session.attachments);
       return;
     }
 
@@ -523,10 +496,9 @@ bot.on("message", async (msg) => {
       }
       session.body = text;
       session.state = STATES.WAITING_ATTACHMENTS;
-      session._waitingFor = null;
 
-      // Show attachment options
-      sendAttachmentMenu(chatId, session.attachments);
+      // Show attachment prompt — user can just send photos/files directly
+      sendAttachmentPrompt(chatId, session.attachments);
       break;
     }
 
