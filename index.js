@@ -208,24 +208,24 @@ function sendAttachmentPrompt(chatId, attachments, justAdded = null) {
   let message = "";
 
   if (justAdded) {
-    message += `✅ *${justAdded}* — добавлено!\n\n`;
+    message += `✅ <b>${justAdded}</b> — добавлено!\n\n`;
   }
 
   if (count > 0) {
     message += `━━━━━━━━━━━━━━━━━━━━━━\n`;
-    message += `📎 *Прикреплённые файлы (${count}):*\n`;
+    message += `📎 <b>Прикреплённые файлы (${count}):</b>\n`;
     message += attachments.map((a, i) => `   ${i + 1}. ${a.filename}`).join("\n");
     message += `\n━━━━━━━━━━━━━━━━━━━━━━\n\n`;
-    message += `📩 *Готовы отправить или хотите добавить ещё?*\n`;
+    message += `📩 <b>Готовы отправить или хотите добавить ещё?</b>\n`;
     message += `Отправьте ещё фото/файл или нажмите кнопку внизу.`;
   } else {
-    message += `📎 *Хотите прикрепить вложения к письму?*\n\n`;
+    message += `📎 <b>Хотите прикрепить вложения к письму?</b>\n\n`;
     message += `Просто отправьте мне фото или файл прямо сейчас.\n`;
     message += `Или нажмите кнопку, чтобы пропустить.`;
   }
 
   bot.sendMessage(chatId, message, {
-    parse_mode: "Markdown",
+    parse_mode: "HTML",
     reply_markup: {
       inline_keyboard: [
         count > 0
@@ -244,20 +244,20 @@ function sendAttachmentPrompt(chatId, attachments, justAdded = null) {
 function sendConfirmation(chatId, session) {
   const preview = session.body.length > 200 ? session.body.substring(0, 200) + "..." : session.body;
   const attachInfo = session.attachments.length > 0
-    ? `*Вложения (${session.attachments.length}):*\n${session.attachments.map((a, i) => `  ${i + 1}. ${a.filename}`).join("\n")}\n`
-    : "*Вложения:* нет\n";
+    ? `<b>Вложения (${session.attachments.length}):</b>\n${session.attachments.map((a, i) => `  ${i + 1}. ${a.filename}`).join("\n")}\n`
+    : `<b>Вложения:</b> нет\n`;
 
   bot.sendMessage(
     chatId,
-    `📋 *Проверьте ваше письмо:*\n\n` +
-      `*От:* ${SENDER_NAME}\n` +
-      `*Кому:* ${session.emails.length} получатель(ей)\n` +
-      `*Тема:* ${session.subject}\n` +
+    `📋 <b>Проверьте ваше письмо:</b>\n\n` +
+      `<b>От:</b> ${SENDER_NAME}\n` +
+      `<b>Кому:</b> ${session.emails.length} получатель(ей)\n` +
+      `<b>Тема:</b> ${session.subject}\n` +
       `${attachInfo}` +
-      `*Превью сообщения:*\n_${preview}_\n\n` +
+      `<b>Превью сообщения:</b>\n<i>${preview}</i>\n\n` +
       `Готовы отправить?`,
     {
-      parse_mode: "Markdown",
+      parse_mode: "HTML",
       reply_markup: {
         keyboard: [["✅ Отправить", "❌ Отмена"]],
         one_time_keyboard: true,
@@ -364,11 +364,11 @@ bot.on("message", async (msg) => {
         const count = session.attachments.length;
         await bot.sendMessage(
           chatId,
-          `✅ *Фото добавлено!* (${filename})\n\n` +
-            `📎 Всего вложений: *${count}*\n\n` +
+          `✅ <b>Фото добавлено!</b> (${filename})\n\n` +
+            `📎 Всего вложений: <b>${count}</b>\n\n` +
             `Хотите добавить ещё фото/файл?\nИли готовы отправить?`,
           {
-            parse_mode: "Markdown",
+            parse_mode: "HTML",
             reply_markup: {
               inline_keyboard: [
                 [{ text: `📩 Отправить письмо (${count} влож.)`, callback_data: "attach_done" }],
@@ -404,11 +404,11 @@ bot.on("message", async (msg) => {
         const count = session.attachments.length;
         await bot.sendMessage(
           chatId,
-          `✅ *Файл добавлен!* (${filename})\n\n` +
-            `📎 Всего вложений: *${count}*\n\n` +
+          `✅ <b>Файл добавлен!</b> (${filename})\n\n` +
+            `📎 Всего вложений: <b>${count}</b>\n\n` +
             `Хотите добавить ещё фото/файл?\nИли готовы отправить?`,
           {
-            parse_mode: "Markdown",
+            parse_mode: "HTML",
             reply_markup: {
               inline_keyboard: [
                 [{ text: `📩 Отправить письмо (${count} влож.)`, callback_data: "attach_done" }],
