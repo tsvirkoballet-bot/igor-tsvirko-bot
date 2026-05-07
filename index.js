@@ -8,8 +8,6 @@
 require("dotenv").config();
 const TelegramBot = require("node-telegram-bot-api");
 const nodemailer = require("nodemailer");
-const https = require("https");
-const http = require("http");
 const path = require("path");
 
 // ─── Configuration ──────────────────────────────────────────────
@@ -115,30 +113,15 @@ function escapeMarkdown(text) {
   return text.replace(/([_*\[\]()~`>#\+\-=|{}.!])/g, "\\$1");
 }
 
-// ─── Download file from URL into a Buffer ──────────────────────
-function downloadFileBuffer(fileUrl) {
+// ─── Download file from Telegram by file_id ─────────────────────
+async function downloadTelegramFile(fileId) {
+  const stream = bot.getFileStream(fileId);
   return new Promise((resolve, reject) => {
-    const client = fileUrl.startsWith("https") ? https : http;
-    client.get(fileUrl, (res) => {
-      // Handle redirects
-      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-        return downloadFileBuffer(res.headers.location).then(resolve).catch(reject);
-      }
-      if (res.statusCode !== 200) {
-        return reject(new Error(`Download failed with status ${res.statusCode}`));
-      }
-      const chunks = [];
-      res.on("data", (chunk) => chunks.push(chunk));
-      res.on("end", () => resolve(Buffer.concat(chunks)));
-      res.on("error", reject);
-    }).on("error", reject);
+    const chunks = [];
+    stream.on("data", (chunk) => chunks.push(chunk));
+    stream.on("end", () => resolve(Buffer.concat(chunks)));
+    stream.on("error", (err) => reject(err));
   });
-}
-
-// ─── Get Telegram file download URL ─────────────────────────────
-async function getTelegramFileUrl(fileId) {
-  const file = await bot.getFile(fileId);
-  return `https://api.telegram.org/file/bot${BOT_TOKEN}/${file.file_path}`;
 }
 
 // ─── Send a single email (with optional attachments) ────────────
@@ -365,9 +348,8 @@ bot.on("message", async (msg) => {
       const loadingMsg = await bot.sendMessage(chatId, "⏳ Загружаю фото...");
       try {
         const photo = msg.photo[msg.photo.length - 1];
+        const buffer = await downloadTelegramFile(photo.file_id);
         const file = await bot.getFile(photo.file_id);
-        const fileUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${file.file_path}`;
-        const buffer = await downloadFileBuffer(fileUrl);
         const ext = path.extname(file.file_path) || ".jpg";
         const filename = `photo_${session.attachments.length + 1}${ext}`;
 
@@ -377,10 +359,8 @@ bot.on("message", async (msg) => {
           contentType: `image/${ext.replace(".", "") === "jpg" ? "jpeg" : ext.replace(".", "")}`,
         });
 
-        // Delete loading message
         try { await bot.deleteMessage(chatId, loadingMsg.message_id); } catch (e) {}
 
-        // Immediately ask: done or more?
         const count = session.attachments.length;
         await bot.sendMessage(
           chatId,
@@ -398,9 +378,9 @@ bot.on("message", async (msg) => {
           }
         );
       } catch (err) {
-        console.error("Ошибка загрузки фото:", err.message);
+        console.error("Ошибка загрузки фото:", err.message, err.stack);
         try { await bot.deleteMessage(chatId, loadingMsg.message_id); } catch (e) {}
-        bot.sendMessage(chatId, "⚠️ Не удалось загрузить фото. Попробуйте ещё раз.");
+        bot.sendMessage(chatId, `⚠️ Не удалось загрузить фото. Попробуйте ещё раз.\nОшибка: ${err.message}`);
       }
       return;
     }
@@ -410,9 +390,7 @@ bot.on("message", async (msg) => {
       const loadingMsg = await bot.sendMessage(chatId, "⏳ Загружаю файл...");
       try {
         const doc = msg.document;
-        const file = await bot.getFile(doc.file_id);
-        const fileUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${file.file_path}`;
-        const buffer = await downloadFileBuffer(fileUrl);
+        const buffer = await downloadTelegramFile(doc.file_id);
         const filename = doc.file_name || `file_${session.attachments.length + 1}`;
 
         session.attachments.push({
@@ -421,10 +399,8 @@ bot.on("message", async (msg) => {
           contentType: doc.mime_type || "application/octet-stream",
         });
 
-        // Delete loading message
         try { await bot.deleteMessage(chatId, loadingMsg.message_id); } catch (e) {}
 
-        // Immediately ask: done or more?
         const count = session.attachments.length;
         await bot.sendMessage(
           chatId,
@@ -442,9 +418,9 @@ bot.on("message", async (msg) => {
           }
         );
       } catch (err) {
-        console.error("Ошибка загрузки файла:", err.message);
+        console.error("Ошибка загрузки файла:", err.message, err.stack);
         try { await bot.deleteMessage(chatId, loadingMsg.message_id); } catch (e) {}
-        bot.sendMessage(chatId, "⚠️ Не удалось загрузить файл. Попробуйте ещё раз.");
+        bot.sendMessage(chatId, `⚠️ Не удалось загрузить файл. Попробуйте ещё раз.\nОшибка: ${err.message}`);
       }
       return;
     }
