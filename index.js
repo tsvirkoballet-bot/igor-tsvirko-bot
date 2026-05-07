@@ -343,6 +343,8 @@ bot.on("callback_query", async (query) => {
     await bot.answerCallbackQuery(query.id);
     session.state = STATES.WAITING_CONFIRM;
     sendConfirmation(chatId, session);
+  } else if (data === "attach_more_info" && session.state === STATES.WAITING_ATTACHMENTS) {
+    await bot.answerCallbackQuery(query.id, { text: "Просто отправьте фото или файл 👇" });
   } else {
     await bot.answerCallbackQuery(query.id);
   }
@@ -360,14 +362,12 @@ bot.on("message", async (msg) => {
   if (session.state === STATES.WAITING_ATTACHMENTS) {
     // Handle photo
     if (msg.photo && msg.photo.length > 0) {
+      const loadingMsg = await bot.sendMessage(chatId, "⏳ Загружаю фото...");
       try {
-        // Get the highest resolution photo
         const photo = msg.photo[msg.photo.length - 1];
-        const fileUrl = await getTelegramFileUrl(photo.file_id);
-        const buffer = await downloadFileBuffer(fileUrl);
-
-        // Determine filename
         const file = await bot.getFile(photo.file_id);
+        const fileUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${file.file_path}`;
+        const buffer = await downloadFileBuffer(fileUrl);
         const ext = path.extname(file.file_path) || ".jpg";
         const filename = `photo_${session.attachments.length + 1}${ext}`;
 
@@ -377,9 +377,29 @@ bot.on("message", async (msg) => {
           contentType: `image/${ext.replace(".", "") === "jpg" ? "jpeg" : ext.replace(".", "")}`,
         });
 
-        sendAttachmentPrompt(chatId, session.attachments, filename);
+        // Delete loading message
+        try { await bot.deleteMessage(chatId, loadingMsg.message_id); } catch (e) {}
+
+        // Immediately ask: done or more?
+        const count = session.attachments.length;
+        await bot.sendMessage(
+          chatId,
+          `✅ *Фото добавлено!* (${filename})\n\n` +
+            `📎 Всего вложений: *${count}*\n\n` +
+            `Хотите добавить ещё фото/файл?\nИли готовы отправить?`,
+          {
+            parse_mode: "Markdown",
+            reply_markup: {
+              inline_keyboard: [
+                [{ text: `📩 Отправить письмо (${count} влож.)`, callback_data: "attach_done" }],
+                [{ text: "➕ Добавлю ещё — просто скину", callback_data: "attach_more_info" }],
+              ],
+            },
+          }
+        );
       } catch (err) {
         console.error("Ошибка загрузки фото:", err.message);
+        try { await bot.deleteMessage(chatId, loadingMsg.message_id); } catch (e) {}
         bot.sendMessage(chatId, "⚠️ Не удалось загрузить фото. Попробуйте ещё раз.");
       }
       return;
@@ -387,9 +407,11 @@ bot.on("message", async (msg) => {
 
     // Handle document/file
     if (msg.document) {
+      const loadingMsg = await bot.sendMessage(chatId, "⏳ Загружаю файл...");
       try {
         const doc = msg.document;
-        const fileUrl = await getTelegramFileUrl(doc.file_id);
+        const file = await bot.getFile(doc.file_id);
+        const fileUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${file.file_path}`;
         const buffer = await downloadFileBuffer(fileUrl);
         const filename = doc.file_name || `file_${session.attachments.length + 1}`;
 
@@ -399,18 +421,37 @@ bot.on("message", async (msg) => {
           contentType: doc.mime_type || "application/octet-stream",
         });
 
-        sendAttachmentPrompt(chatId, session.attachments, filename);
+        // Delete loading message
+        try { await bot.deleteMessage(chatId, loadingMsg.message_id); } catch (e) {}
+
+        // Immediately ask: done or more?
+        const count = session.attachments.length;
+        await bot.sendMessage(
+          chatId,
+          `✅ *Файл добавлен!* (${filename})\n\n` +
+            `📎 Всего вложений: *${count}*\n\n` +
+            `Хотите добавить ещё фото/файл?\nИли готовы отправить?`,
+          {
+            parse_mode: "Markdown",
+            reply_markup: {
+              inline_keyboard: [
+                [{ text: `📩 Отправить письмо (${count} влож.)`, callback_data: "attach_done" }],
+                [{ text: "➕ Добавлю ещё — просто скину", callback_data: "attach_more_info" }],
+              ],
+            },
+          }
+        );
       } catch (err) {
         console.error("Ошибка загрузки файла:", err.message);
+        try { await bot.deleteMessage(chatId, loadingMsg.message_id); } catch (e) {}
         bot.sendMessage(chatId, "⚠️ Не удалось загрузить файл. Попробуйте ещё раз.");
       }
       return;
     }
 
-    // If they send text while waiting for attachments, ignore unless it's something else
+    // If they send text while waiting for attachments
     if (msg.text) {
-      bot.sendMessage(chatId, "⚠️ Отправьте фото или файл, либо нажмите кнопку ниже.");
-      sendAttachmentPrompt(chatId, session.attachments);
+      bot.sendMessage(chatId, "⚠️ Отправьте фото или файл, либо нажмите кнопку выше.");
       return;
     }
 
